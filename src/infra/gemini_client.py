@@ -28,9 +28,11 @@ _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 log = make_logger("infra.gemini_client")
 
-_NO_THINKING = types.GenerateContentConfig(
-    thinking_config=types.ThinkingConfig(thinking_budget=0)
-)
+# thinking_budget semantics (gemini-2.5-*): 0 disables reasoning, -1 lets the
+# model size its own budget. Reasoning is off by default to keep the cheap
+# text/PDF strategies fast; vision analysis opts in for higher accuracy.
+THINKING_OFF = 0
+THINKING_DYNAMIC = -1
 
 
 def _load_dotenv() -> None:
@@ -56,7 +58,7 @@ class GeminiClient:
     a list of strings and/or `types.Part` objects (text, images, PDF bytes).
     """
 
-    def __init__(self, model: str, max_attempts: int = 3) -> None:
+    def __init__(self, model: str, max_attempts: int = 3, thinking_budget: int = THINKING_OFF) -> None:
         _load_dotenv()
         api_key = os.getenv("GEMINI_API_KEY", "")
         if not api_key:
@@ -64,6 +66,9 @@ class GeminiClient:
         self._client = genai.Client(api_key=api_key)
         self.model = model
         self.max_attempts = max_attempts
+        self._config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
+        )
 
     def generate(self, contents: list[Any]) -> str:
         """Call Gemini and return the response text. Retries up to max_attempts."""
@@ -74,7 +79,7 @@ class GeminiClient:
                 response = self._client.models.generate_content(
                     model=self.model,
                     contents=contents,
-                    config=_NO_THINKING,
+                    config=self._config,
                 )
                 latency_ms = round((time.monotonic() - t0) * 1000)
                 log.info("gemini ok", {"model": self.model, "attempt": attempt + 1, "latency_ms": latency_ms})
@@ -96,8 +101,8 @@ class GeminiClient:
         return types.Part.from_bytes(data=png_bytes, mime_type="image/png")
 
 
-def build_client(model: str, max_attempts: int) -> GeminiClient:
-    return GeminiClient(model=model, max_attempts=max_attempts)
+def build_client(model: str, max_attempts: int, thinking_budget: int = THINKING_OFF) -> GeminiClient:
+    return GeminiClient(model=model, max_attempts=max_attempts, thinking_budget=thinking_budget)
 
 
 def parse_gemini_fields(raw: str, fields: list[FieldSpec]) -> dict[str, FieldValue]:

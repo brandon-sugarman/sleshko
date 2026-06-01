@@ -5,8 +5,8 @@ from collections.abc import Iterable
 import pymupdf
 
 from analysis.acroform_cover import AcroFormCoverAnalyzer
-from analysis.flattened_cover import extract_flattened_cover
-from analysis.statement_totals import extract_statement_totals
+from flattened_cover import extract_flattened_cover
+from statement_totals import extract_statement_totals
 from config import Settings
 from domain.document import ExtractedDocument
 from domain.extraction_result import ExtractionResult, FieldValue

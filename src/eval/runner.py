@@ -58,6 +58,7 @@ def main() -> None:
         ("acroform", "acroform_cover"),
         ("pymupdf_text", "gemini_text"),
         ("pymupdf_full", "gemini_pdf"),
+        ("pymupdf_full", "gemini_vision"),
         ("pymupdf_full", "hybrid_max_fidelity"),
     ]
     pipelines = [

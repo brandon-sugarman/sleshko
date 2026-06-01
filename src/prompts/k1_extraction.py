@@ -23,7 +23,7 @@ EXTRACTION RULES (follow exactly):
 # generic IRS instructions, cover letters, and transmittal sheets.
 _PAGE_TYPE_GUIDANCE = """
 PAGE TYPE GUIDANCE:
-The document may contain several page types — only extract data from the last three:
+The document may contain several page types — only extract data from the relevant pages:
   - IGNORE: mailing/transmittal cover sheets (recipient address, "SAMPLE" watermarks)
   - IGNORE: cover letters (explanatory prose, "please replace your K-1" language)
   - IGNORE: generic IRS instruction/code pages (tables of box codes and where to report them,
@@ -79,3 +79,46 @@ FIELDS TO EXTRACT (JSON key: expected type):
 
 Read every relevant page of the attached PDF carefully.
 Return a JSON object containing only the fields you found with non-zero / non-empty values."""
+
+
+# Rules specific to reading ONE page in isolation. The biggest failure mode of
+# whole-document extraction on flattened K-1s is binding a number to the wrong
+# field because labels and values are far apart in the text stream; isolating a
+# single page image and forbidding cross-page inference removes that ambiguity.
+_VISION_PAGE_RULES = """
+EXTRACTION RULES (follow exactly):
+1. This is ONE page of a larger K-1 package. Extract ONLY values printed on THIS page.
+2. If this page is a cover letter, FAQ, transmittal sheet, or generic IRS instruction
+   page — or has no taxpayer-specific amounts — return an empty object: {}.
+3. Read a value only when its line number / label is printed next to it on this page.
+   Do NOT infer, calculate, or carry values over from another page.
+4. Each printed amount maps to at most one field. Never reuse the same number for
+   multiple fields, and never split a label's value across unrelated fields.
+5. Extract only from labeled data rows or boxes. Ignore amounts that appear inside
+   explanatory sentences, footnote prose, or notes that merely mention a box/line
+   number (e.g. "...included in the net amount reported in Box 1 and Box 13V...").
+6. Integers: strip commas and dollar signs. Parentheses or a leading minus mean
+   negative: (1,234) -> -1234. A value shown as a reduction (e.g. withdrawals &
+   distributions in the capital account) is negative.
+7. Text fields (names, EINs, codes): copy the characters exactly as printed.
+8. For "*_logic" text fields: fill only with a full descriptive clause if one is
+   printed. Never put a bare code letter (like "V" or "Z") in a logic field.
+9. Omit absent or blank fields entirely. Never emit a zero.
+10. Return ONLY a valid JSON object — no markdown fences, no commentary.
+""".strip()
+
+
+def build_vision_page_prompt(fields: list[FieldSpec]) -> str:
+    """Prompt for per-page vision extraction: one rendered page image → JSON."""
+    return f"""You are extracting fields from a single rendered page of an IRS Schedule K-1
+(Form 1065) tax package shown as an image.
+
+{_VISION_PAGE_RULES}
+
+FIELDS TO EXTRACT (JSON key: expected type):
+{{
+{_field_lines(fields)}
+}}
+
+Return a JSON object containing only the fields printed on this page with
+non-zero / non-empty values, or {{}} if this page has none."""
