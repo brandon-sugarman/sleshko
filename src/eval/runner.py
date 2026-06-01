@@ -29,12 +29,12 @@ GEMINI_CONFIGS: list[tuple[str, str, int]] = [
 # analysis), so the active set is curated here. Shared with sample_outputs_runner
 # so the manual-inspection dumps stay in sync with what the eval benchmarks.
 ACTIVE_PAIRS: list[tuple[str, str]] = [
-    ("acroform", "acroform_cover"),
-    ("pymupdf_text", "gemini_text"),
-    ("pymupdf_full", "gemini_pdf"),
-    ("pymupdf_full", "gemini_vision"),
-    ("pymupdf_full", "acroform_gemini_selective"),
-    ("pymupdf_full", "hybrid_max_fidelity"),
+    ("pymupdf_full", "hybrid_max_fidelity"), #best, 100% exact, but overfits
+    ("pymupdf_full", "gemini_vision"), #strongest and most realistic, NZ 95.9% recall
+    ("pymupdf_full", "acroform_gemini_selective"), #strong, more false+
+    ("pymupdf_full", "gemini_pdf"), #mid, lower recall
+    ("acroform", "acroform_cover"), #weak recall
+    ("pymupdf_text", "gemini_text"), #worst recall
 ]
 
 
