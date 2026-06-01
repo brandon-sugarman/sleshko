@@ -80,7 +80,7 @@ class HybridMaxFidelityAnalyzer:
 
 def build(settings: Settings) -> HybridMaxFidelityAnalyzer:
     try:
-        client = build_client(settings.gemini_model, settings.gemini_max_attempts)
+        client = build_client(settings.gemini)
     except ValueError as exc:
         log.warning("gemini fallback disabled", {"error": str(exc)})
         client = None

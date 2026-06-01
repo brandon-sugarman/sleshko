@@ -52,5 +52,5 @@ class GeminiPdfAnalyzer:
 
 
 def build(settings: Settings) -> GeminiPdfAnalyzer:
-    client = build_client(settings.gemini_model, settings.gemini_max_attempts)
+    client = build_client(settings.gemini)
     return GeminiPdfAnalyzer(client=client)

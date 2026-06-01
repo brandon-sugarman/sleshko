@@ -50,5 +50,5 @@ class GeminiTextAnalyzer:
 
 
 def build(settings: Settings) -> GeminiTextAnalyzer:
-    client = build_client(settings.gemini_model, settings.gemini_max_attempts)
+    client = build_client(settings.gemini)
     return GeminiTextAnalyzer(client=client, chunk_size=settings.pydantic_chunk_size)

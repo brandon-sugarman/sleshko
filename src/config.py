@@ -5,41 +5,63 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
 DEFAULT_GEMINI_MAX_ATTEMPTS = 3
 DEFAULT_PYDANTIC_CHUNK_SIZE = 50
 
-# Per-page vision extraction renders pages at this DPI and lets the model size
-# its own reasoning budget (-1 = dynamic) — accuracy matters more than latency
-# because the pages are extracted in parallel.
+# Per-page vision extraction renders pages at this DPI — accuracy matters more
+# than latency because the pages are extracted in parallel.
 DEFAULT_VISION_DPI = 200
-DEFAULT_VISION_THINKING_BUDGET = -1
+
+# thinking_budget for Gemini reasoning: 0 disables it, -1 lets the model size
+# its own budget (dynamic). Dynamic favors accuracy; the eval runner overrides
+# it per config to compare cost vs. accuracy.
+DEFAULT_GEMINI_THINKING_BUDGET = -1
+
+
+@dataclass(frozen=True)
+class GeminiSettings:
+    """Gemini-only tunables, grouped so extraction/analysis strategies that
+    don't call Gemini stay decoupled from provider configuration."""
+
+    model: str
+    max_attempts: int
+    thinking_budget: int
 
 
 @dataclass(frozen=True)
 class Settings:
     pdfs_dir: Path
     eval_set_path: Path
-    gemini_model: str
-    gemini_max_attempts: int
     pydantic_chunk_size: int
     vision_dpi: int
-    vision_thinking_budget: int
+    gemini: GeminiSettings
 
 
-def load_settings(repo_root: Path = _REPO_ROOT) -> Settings:
+def load_settings(
+    repo_root: Path = _REPO_ROOT,
+    gemini_model: str | None = None,
+    gemini_thinking_budget: int | None = None,
+) -> Settings:
     """Factory for default configuration. All tunables live here; strategy code
     never inlines model names, DPI, retry counts, or paths.
 
-    The Gemini API key is read from the environment by GeminiClient, not stored
-    in Settings.
+    `gemini_model` and `gemini_thinking_budget` override the defaults so the
+    eval runner can benchmark model/reasoning configurations. The Gemini API
+    key is read from the environment by GeminiClient, not stored in Settings.
     """
     return Settings(
         pdfs_dir=repo_root / "pdfs",
         eval_set_path=repo_root / "eval_set.csv",
-        gemini_model=DEFAULT_GEMINI_MODEL,
-        gemini_max_attempts=DEFAULT_GEMINI_MAX_ATTEMPTS,
         pydantic_chunk_size=DEFAULT_PYDANTIC_CHUNK_SIZE,
         vision_dpi=DEFAULT_VISION_DPI,
-        vision_thinking_budget=DEFAULT_VISION_THINKING_BUDGET,
+        gemini=GeminiSettings(
+            model=gemini_model if gemini_model is not None else DEFAULT_GEMINI_MODEL,
+            max_attempts=DEFAULT_GEMINI_MAX_ATTEMPTS,
+            thinking_budget=(
+                gemini_thinking_budget
+                if gemini_thinking_budget is not None
+                else DEFAULT_GEMINI_THINKING_BUDGET
+            ),
+        ),
     )

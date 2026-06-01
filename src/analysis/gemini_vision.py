@@ -86,11 +86,7 @@ class GeminiVisionAnalyzer:
 
 
 def build(settings: Settings) -> GeminiVisionAnalyzer:
-    client = build_client(
-        settings.gemini_model,
-        settings.gemini_max_attempts,
-        thinking_budget=settings.vision_thinking_budget,
-    )
+    client = build_client(settings.gemini)
     return GeminiVisionAnalyzer(client=client, dpi=settings.vision_dpi)
 
 

@@ -26,14 +26,20 @@ def register_analysis(name: str, factory: AnalysisFactory) -> None:
 
 @dataclass(frozen=True)
 class Pipeline:
-    """One extraction strategy paired with one analysis strategy."""
+    """One extraction strategy paired with one analysis strategy.
+
+    `label` distinguishes otherwise-identical strategy pairings that run under
+    different Gemini configs in the same matrix (e.g. "flash/off" vs "pro/dyn").
+    """
 
     extraction: ExtractionStrategy
     analysis: AnalysisStrategy
+    label: str = ""
 
     @property
     def name(self) -> str:
-        return f"{self.extraction.name} + {self.analysis.name}"
+        base = f"{self.extraction.name} + {self.analysis.name}"
+        return f"[{self.label}] {base}" if self.label else base
 
     def run(self, doc_name: str, pdf_bytes: bytes) -> ExtractionResult:
         document = self.extraction.extract(doc_name, pdf_bytes)

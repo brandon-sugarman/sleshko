@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 from config import Settings, load_settings
@@ -8,10 +9,20 @@ from domain.field_catalog import FieldSpec, build_catalog
 from domain.scoring import DocumentScore, MatrixReport, PipelineScore
 from eval.eval_set import ExpectedRecord, load_eval_set
 from eval.scorer import score_document
+from infra.gemini_client import THINKING_DYNAMIC, THINKING_OFF
 from logger import dump_pipeline_snapshot, dump_report, make_logger
 from registry import ANALYSIS_STRATEGIES, EXTRACTION_STRATEGIES, Pipeline, build_matrix
 
 log = make_logger("eval.runner")
+
+# Gemini configs benchmarked against every active strategy pairing. Each tuple
+# is (label, model, thinking_budget); the label disambiguates pipelines that
+# share a strategy pairing but differ only by Gemini config.
+GEMINI_CONFIGS: list[tuple[str, str, int]] = [
+    ("flash/off", "gemini-2.5-flash", THINKING_OFF),
+    ("flash/dyn", "gemini-2.5-flash", THINKING_DYNAMIC),
+    ("pro/dyn", "gemini-2.5-pro", THINKING_DYNAMIC),
+]
 
 
 def _load_pdfs(pdfs_dir: Path, doc_names: list[str]) -> dict[str, bytes]:
@@ -55,17 +66,22 @@ def main() -> None:
     # Build only meaningful extraction/analysis pairs; the full cartesian product
     # includes invalid combos such as text-only IR feeding native-PDF analysis.
     pairs: list[tuple[str, str]] = [
-        ("acroform", "acroform_cover"),
-        ("pymupdf_text", "gemini_text"),
-        ("pymupdf_full", "gemini_pdf"),
+        # ("acroform", "acroform_cover"),
+        # ("pymupdf_text", "gemini_text"),
+        # ("pymupdf_full", "gemini_pdf"),
         ("pymupdf_full", "gemini_vision"),
         ("pymupdf_full", "hybrid_max_fidelity"),
     ]
-    pipelines = [
-        build_matrix(settings, [ext], [ana])[0]
-        for ext, ana in pairs
-        if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES
-    ]
+    # Benchmark every pairing under each Gemini config. The strategy clients are
+    # built from per-config settings; run_matrix's `settings` only supplies the
+    # model-independent eval-set and PDF paths.
+    pipelines: list[Pipeline] = []
+    for label, model, budget in GEMINI_CONFIGS:
+        cfg = load_settings(gemini_model=model, gemini_thinking_budget=budget)
+        for ext, ana in pairs:
+            if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES:
+                pipeline = build_matrix(cfg, [ext], [ana])[0]
+                pipelines.append(replace(pipeline, label=label))
     if not pipelines:
         log.warning("no strategies registered; register extraction/analysis strategies first", {})
         return
@@ -73,8 +89,12 @@ def main() -> None:
     snapshot_path = dump_pipeline_snapshot({
         "registered_extraction_strategies": list(EXTRACTION_STRATEGIES),
         "registered_analysis_strategies": list(ANALYSIS_STRATEGIES),
+        "gemini_configs": [
+            {"label": label, "model": model, "thinking_budget": budget}
+            for label, model, budget in GEMINI_CONFIGS
+        ],
         "pipelines": [
-            {"name": p.name, "extraction": p.extraction.name, "analysis": p.analysis.name}
+            {"name": p.name, "label": p.label, "extraction": p.extraction.name, "analysis": p.analysis.name}
             for p in pipelines
         ],
     })

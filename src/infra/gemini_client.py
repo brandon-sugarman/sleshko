@@ -19,6 +19,7 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from config import GeminiSettings
 from domain.extraction_result import FieldValue
 from domain.field_catalog import FieldSpec, FieldType
 from eval.normalize import normalize_int
@@ -101,8 +102,12 @@ class GeminiClient:
         return types.Part.from_bytes(data=png_bytes, mime_type="image/png")
 
 
-def build_client(model: str, max_attempts: int, thinking_budget: int = THINKING_OFF) -> GeminiClient:
-    return GeminiClient(model=model, max_attempts=max_attempts, thinking_budget=thinking_budget)
+def build_client(gemini: GeminiSettings) -> GeminiClient:
+    return GeminiClient(
+        model=gemini.model,
+        max_attempts=gemini.max_attempts,
+        thinking_budget=gemini.thinking_budget,
+    )
 
 
 def parse_gemini_fields(raw: str, fields: list[FieldSpec]) -> dict[str, FieldValue]:
