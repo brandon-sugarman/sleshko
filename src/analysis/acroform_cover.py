@@ -79,6 +79,80 @@ _LINE20_CODE_MAP: dict[str, str] = {
 }
 
 
+class AcroFormCoverAnalyzer:
+    """Deterministic field-map over AcroForm widgets for the K-1 cover page.
+
+    Works for fillable PDFs (doc_1, doc_2). Flattened PDFs produce no form
+    fields, so this returns an empty result (all fields score as zero-default).
+    """
+
+    name = "acroform_cover"
+
+    def analyze(self, document: ExtractedDocument) -> ExtractionResult:
+        field_map = {f.name: f.value for f in document.form_fields}
+
+        if not field_map:
+            log.info("no form fields", {"doc": document.doc_name})
+            return ExtractionResult(doc_name=document.doc_name, pipeline=self.name, fields={})
+
+        emitted: dict[str, FieldValue] = {}
+
+        # Partnership name (first line of the potentially multi-line field)
+        name_raw = field_map.get("f1_7[0]", "")
+        first_line = name_raw.split("\n")[0].strip()
+        if first_line:
+            emitted["partnership_name"] = FieldValue(
+                field="partnership_name", value=first_line, source="acroform:f1_7[0]"
+            )
+
+        # EIN
+        ein_raw = field_map.get("f1_6[0]", "").strip()
+        if ein_raw:
+            emitted["partnership_employer_identification_number"] = FieldValue(
+                field="partnership_employer_identification_number",
+                value=ein_raw,
+                source="acroform:f1_6[0]",
+            )
+
+        # Direct numeric fields
+        for form_name, schema_name in _DIRECT.items():
+            raw = field_map.get(form_name, "")
+            if raw and _is_numeric(raw):
+                emitted[schema_name] = FieldValue(
+                    field=schema_name, value=raw, source=f"acroform:{form_name}"
+                )
+
+        # Withdrawals (negate: form shows a positive withdrawal amount)
+        wd_raw = field_map.get(_WITHDRAWAL_FIELD, "")
+        if wd_raw and _is_numeric(wd_raw):
+            pos_val = normalize_int(wd_raw)
+            if pos_val != 0:
+                emitted["withdrawals_and_distributions_cash"] = FieldValue(
+                    field="withdrawals_and_distributions_cash",
+                    value=-pos_val,
+                    source=f"acroform:{_WITHDRAWAL_FIELD}",
+                )
+
+        # Line 15 + Line 20 code+value rows
+        _apply_coded_rows(field_map, _LINE15_PAIRS, _LINE15_CODE_MAP, emitted)
+        _apply_coded_rows(field_map, _LINE20_PAIRS, _LINE20_CODE_MAP, emitted)
+
+        log.info(
+            "acroform_cover analyze done",
+            {"doc": document.doc_name, "fields_emitted": len(emitted)},
+        )
+        return ExtractionResult(doc_name=document.doc_name, pipeline=self.name, fields=emitted)
+
+
+def build(settings: object) -> AcroFormCoverAnalyzer:
+    return AcroFormCoverAnalyzer()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _is_numeric(raw: str) -> bool:
     """True only if raw can be meaningfully parsed as an integer.
 
@@ -109,72 +183,3 @@ def _apply_coded_rows(
             emitted[schema_name] = FieldValue(
                 field=schema_name, value=raw, source=f"acroform:{code_field}={code}"
             )
-
-
-class AcroFormCoverAnalyzer:
-    """Deterministic field-map over AcroForm widgets for the K-1 cover page.
-
-    Works for fillable PDFs (doc_1, doc_2). Flattened PDFs produce no form
-    fields, so this returns an empty result (all fields score as zero-default).
-    """
-
-    name = "acroform_cover"
-
-    def analyze(self, document: ExtractedDocument) -> ExtractionResult:
-        field_map = {f.name: f.value for f in document.form_fields}
-
-        if not field_map:
-            log.info("no form fields", {"doc": document.doc_name})
-            return ExtractionResult(doc_name=document.doc_name, pipeline=self.name, fields={})
-
-        emitted: dict[str, FieldValue] = {}
-
-        # --- Partnership name (first line of the potentially multi-line field) ---
-        name_raw = field_map.get("f1_7[0]", "")
-        first_line = name_raw.split("\n")[0].strip()
-        if first_line:
-            emitted["partnership_name"] = FieldValue(
-                field="partnership_name", value=first_line, source="acroform:f1_7[0]"
-            )
-
-        # --- EIN ---
-        ein_raw = field_map.get("f1_6[0]", "").strip()
-        if ein_raw:
-            emitted["partnership_employer_identification_number"] = FieldValue(
-                field="partnership_employer_identification_number",
-                value=ein_raw,
-                source="acroform:f1_6[0]",
-            )
-
-        # --- Direct numeric fields ---
-        for form_name, schema_name in _DIRECT.items():
-            raw = field_map.get(form_name, "")
-            if raw and _is_numeric(raw):
-                emitted[schema_name] = FieldValue(
-                    field=schema_name, value=raw, source=f"acroform:{form_name}"
-                )
-
-        # --- Withdrawals (negate: form shows a positive withdrawal amount) ---
-        wd_raw = field_map.get(_WITHDRAWAL_FIELD, "")
-        if wd_raw and _is_numeric(wd_raw):
-            pos_val = normalize_int(wd_raw)
-            if pos_val != 0:
-                emitted["withdrawals_and_distributions_cash"] = FieldValue(
-                    field="withdrawals_and_distributions_cash",
-                    value=-pos_val,
-                    source=f"acroform:{_WITHDRAWAL_FIELD}",
-                )
-
-        # --- Line 15 + Line 20 code+value rows ---
-        _apply_coded_rows(field_map, _LINE15_PAIRS, _LINE15_CODE_MAP, emitted)
-        _apply_coded_rows(field_map, _LINE20_PAIRS, _LINE20_CODE_MAP, emitted)
-
-        log.info(
-            "acroform_cover analyze done",
-            {"doc": document.doc_name, "fields_emitted": len(emitted)},
-        )
-        return ExtractionResult(doc_name=document.doc_name, pipeline=self.name, fields=emitted)
-
-
-def build(settings: object) -> AcroFormCoverAnalyzer:
-    return AcroFormCoverAnalyzer()

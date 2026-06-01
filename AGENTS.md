@@ -27,6 +27,8 @@ This file defines repository standards for agents working on this codebase. It i
   - extraction: PDF text/image processing and model calls
   - normalization: value cleanup and type conversion
   - evaluation: expected/actual comparison and reporting
+- **File layout order**: imports → module-level constants → main class → `build()` factory → private helpers at the bottom. Helpers are underscore-prefixed and live below everything else so readers land on the important logic first.
+- Shared helpers used by more than one module belong in the module closest to their concern (e.g. `parse_gemini_fields` lives in `infra/gemini_client.py`), not copy-pasted into each caller.
 - Do not duplicate large parts of the schema manually. Use `pydantic_model.py` as the source of truth.
 
 ---

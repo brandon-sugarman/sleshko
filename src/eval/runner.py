@@ -9,7 +9,7 @@ from domain.scoring import DocumentScore, MatrixReport, PipelineScore
 from eval.eval_set import ExpectedRecord, load_eval_set
 from eval.scorer import score_document
 from logger import make_logger
-from registry import Pipeline, build_matrix
+from registry import ANALYSIS_STRATEGIES, EXTRACTION_STRATEGIES, Pipeline, build_matrix
 
 log = make_logger("eval.runner")
 
@@ -52,7 +52,19 @@ def main() -> None:
     settings = load_settings()
     import strategies  # noqa: F401 — populates EXTRACTION_STRATEGIES / ANALYSIS_STRATEGIES
 
-    pipelines = build_matrix(settings)
+    # Build only the meaningful extraction×analysis pairs.  The full cartesian
+    # product includes invalid combos (e.g. acroform has no text for gemini_text,
+    # pymupdf_text has no source_bytes for gemini_pdf).
+    _PAIRS: list[tuple[str, str]] = [
+        ("acroform", "acroform_cover"),
+        ("pymupdf_text", "gemini_text"),
+        ("pymupdf_full", "gemini_pdf"),
+    ]
+    pipelines = [
+        build_matrix(settings, [ext], [ana])[0]
+        for ext, ana in _PAIRS
+        if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES
+    ]
     if not pipelines:
         log.warning("no strategies registered; register extraction/analysis strategies first", {})
         return
