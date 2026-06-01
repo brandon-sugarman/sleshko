@@ -8,8 +8,8 @@ from domain.field_catalog import FieldSpec, build_catalog
 from domain.scoring import DocumentScore, MatrixReport, PipelineScore
 from eval.eval_set import ExpectedRecord, load_eval_set
 from eval.scorer import score_document
-from logger import make_logger
-from registry import Pipeline, build_matrix
+from logger import dump_rubric, make_logger
+from registry import ANALYSIS_STRATEGIES, EXTRACTION_STRATEGIES, Pipeline, build_matrix
 
 log = make_logger("eval.runner")
 
@@ -56,6 +56,17 @@ def main() -> None:
     if not pipelines:
         log.warning("no strategies registered; register extraction/analysis strategies first", {})
         return
+
+    rubric_path = dump_rubric({
+        "registered_extraction_strategies": list(EXTRACTION_STRATEGIES),
+        "registered_analysis_strategies": list(ANALYSIS_STRATEGIES),
+        "pipelines": [
+            {"name": p.name, "extraction": p.extraction.name, "analysis": p.analysis.name}
+            for p in pipelines
+        ],
+    })
+    log.info("rubric written", {"path": str(rubric_path)})
+
     report = run_matrix(settings, pipelines)
     from eval.report import render_console, render_doc_scores
 
