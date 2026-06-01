@@ -118,7 +118,7 @@ src/
   prompts/         # LLM prompt builders
   registry.py      # strategy registry + Pipeline + build_matrix()
   strategies.py    # manifest: one register_* line per strategy
-  config.py        # all tunables (model, DPI, retry counts, paths)
+  config.py        # Settings dataclass and load_settings() factory (paths)
 docs/
   PLANNING.md      # architecture deep-dive and extension guide
 ```

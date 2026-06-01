@@ -7,6 +7,7 @@ from pathlib import Path
 
 # Make src/ and the repo root importable when running as `python main.py`
 # (pytest uses pyproject.toml [tool.pytest.ini_options] pythonpath instead).
+# Run using `uv run python main.py`
 _repo_root = Path(__file__).resolve().parent
 for _p in (_repo_root / "src", _repo_root):
     if str(_p) not in sys.path:
