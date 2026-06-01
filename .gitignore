@@ -1,0 +1,19 @@
+/logs/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# uv / virtualenv
+.venv/
+
+# Generated extraction artifacts
+out/
+artifacts/
+*.rendered.png
+*.gemini.json
+debug/
