@@ -16,4 +16,3 @@ out/
 artifacts/
 *.rendered.png
 *.gemini.json
-debug/
