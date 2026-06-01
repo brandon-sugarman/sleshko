@@ -46,10 +46,11 @@ class AcroFormGeminiSelectiveAnalyzer:
         emitted = dict(self._acroform.analyze(document).fields)
         fallback_fields = _unresolved_fields(self._catalog, emitted)
         selected_pages = _select_fallback_pages(document)
+        page_texts = {page.page: page.text for page in document.pages}
 
         if fallback_fields and selected_pages:
             images = render_page_pngs(document.source_bytes, self._dpi, selected_pages)
-            for field in self._extract_pages(images, fallback_fields).values():
+            for field in self._extract_pages(images, page_texts, fallback_fields).values():
                 emitted.setdefault(field.field, field)
 
         log.info(
@@ -66,6 +67,7 @@ class AcroFormGeminiSelectiveAnalyzer:
     def _extract_pages(
         self,
         images: dict[int, bytes],
+        page_texts: dict[int, str],
         fields: list[FieldSpec],
     ) -> dict[str, FieldValue]:
         ordered = sorted(images.items())
@@ -75,17 +77,30 @@ class AcroFormGeminiSelectiveAnalyzer:
         prompt = build_vision_page_prompt(fields)
         workers = min(_MAX_PARALLEL_PAGES, len(ordered))
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            per_page = list(pool.map(lambda item: self._extract_one(*item, prompt, fields), ordered))
+            per_page = list(
+                pool.map(
+                    lambda item: self._extract_one(
+                        item[0], item[1], page_texts.get(item[0], ""), prompt, fields
+                    ),
+                    ordered,
+                )
+            )
         return _merge_pages(per_page)
 
     def _extract_one(
         self,
         page_idx: int,
         png: bytes,
+        page_text: str,
         prompt: str,
         fields: list[FieldSpec],
     ) -> tuple[int, dict[str, FieldValue]]:
-        response = self._client.generate([self._client.image_part(png), prompt])
+        contents: list = [self._client.image_part(png)]
+        text_context = _text_context(page_text)
+        if text_context:
+            contents.append(text_context)
+        contents.append(prompt)
+        response = self._client.generate(contents)
         parsed = parse_gemini_fields(response, fields)
         page_fields = {
             name: FieldValue(field=value.field, value=value.value, source=f"selective_vision:p{page_idx + 1}")
@@ -102,6 +117,23 @@ def build(settings: Settings) -> AcroFormGeminiSelectiveAnalyzer:
 
 def _unresolved_fields(catalog: list[FieldSpec], emitted: dict[str, FieldValue]) -> list[FieldSpec]:
     return [field for field in catalog if field.name not in emitted]
+
+
+def _text_context(page_text: str) -> str:
+    """Format the page's embedded text layer as a secondary, advisory input.
+
+    Scanned statement pages carry little or no text layer, so
+    the rendered image stays authoritative. When a text layer is present it helps
+    Gemini disambiguate values the rasterized image renders ambiguously.
+    """
+    text = page_text.strip()
+    if not text:
+        return ""
+    return (
+        "EMBEDDED TEXT LAYER for this page (advisory only — the image above is "
+        "authoritative; use this text just to disambiguate hard-to-read values):\n"
+        f"{text}"
+    )
 
 
 def _select_fallback_pages(document: ExtractedDocument) -> list[int]:
