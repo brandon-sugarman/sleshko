@@ -3,7 +3,7 @@ from __future__ import annotations
 import pymupdf
 
 from config import Settings
-from domain.document import ExtractedDocument, ExtractedPage
+from domain.document import ExtractedDocument, ExtractedPage, FormField, Word
 from logger import make_logger
 
 log = make_logger("extraction.pymupdf_text")
@@ -36,8 +36,18 @@ class PyMuPdfTextExtractor:
             producer = doc.metadata.get("producer", "") or ""
             pages: list[ExtractedPage] = []
             for page_idx in range(doc.page_count):
-                text = doc.load_page(page_idx).get_text("text")
-                pages.append(ExtractedPage(page=page_idx, text=text))
+                page = doc.load_page(page_idx)
+                text = page.get_text("text")
+                words = tuple(_to_word(page_idx, raw) for raw in page.get_text("words"))
+                form_fields = tuple(_to_form_field(page_idx, widget) for widget in page.widgets() or [])
+                pages.append(
+                    ExtractedPage(
+                        page=page_idx,
+                        text=text,
+                        words=words,
+                        form_fields=form_fields,
+                    )
+                )
         finally:
             doc.close()
 
@@ -74,3 +84,15 @@ class PyMuPdfFullExtractor(PyMuPdfTextExtractor):
 def build_with_bytes(settings: Settings) -> PyMuPdfFullExtractor:
     """Factory variant that preserves raw PDF bytes for gemini_pdf analysis."""
     return PyMuPdfFullExtractor()
+
+
+def _to_word(page_idx: int, raw: tuple) -> Word:
+    x0, y0, x1, y1, text, *_ = raw
+    return Word(text=str(text), bbox=(x0, y0, x1, y1), page=page_idx)
+
+
+def _to_form_field(page_idx: int, widget: pymupdf.Widget) -> FormField:
+    short_name = widget.field_name.split(".")[-1]
+    raw_value = widget.field_value
+    value = str(raw_value).strip() if raw_value is not None else ""
+    return FormField(name=short_name, value=value, page=page_idx)

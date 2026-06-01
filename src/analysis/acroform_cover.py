@@ -3,6 +3,7 @@ from __future__ import annotations
 from domain.document import ExtractedDocument
 from domain.extraction_result import ExtractionResult, FieldValue
 from eval.normalize import normalize_int
+from k1_codes import field_for_code
 from logger import make_logger
 
 log = make_logger("analysis.acroform_cover")
@@ -54,9 +55,13 @@ _LINE15_PAIRS: list[tuple[str, str]] = [
     ("Line15[0]", "f1_63[0]"),
     ("f1_64[0]", "f1_65[0]"),
 ]
-_LINE15_CODE_MAP: dict[str, str] = {
-    "O": "line_15o_backup_withholding",
-}
+
+_LINE13_PAIRS: list[tuple[str, str]] = [
+    ("Line13[0]", "f1_55[0]"),
+    ("f1_56[0]", "f1_57[0]"),
+    ("f1_58[0]", "f1_59[0]"),
+    ("f1_60[0]", "f1_61[0]"),
+]
 
 _LINE20_PAIRS: list[tuple[str, str]] = [
     ("Line20[0]", "f1_92[0]"),
@@ -64,19 +69,6 @@ _LINE20_PAIRS: list[tuple[str, str]] = [
     ("f1_95[0]", "f1_96[0]"),
     ("f1_97[0]", "f1_98[0]"),
 ]
-_LINE20_CODE_MAP: dict[str, str] = {
-    "AA": "line_20AA_section_704c_information",
-    "AB": "line_20AB_section_751_gain_loss",
-    "AD": "line_20AD_deemed_section_1250_unrecaptured_gain",
-    "AE": "line_20AE_excess_taxable_income",
-    "AF": "line_20AF_excess_business_interest_income",
-    "AG": "line_20AG_gross_receipts_section_448_c",
-    "AM": "line_20AM_section_1061_information",
-    "N": "line_20N_interest_expense_for_corporate_partners",
-    "O": "line_20O_453I3_information",
-    "P": "line_20P_452Ac_information",
-    "V": "line_20V_unrelated_business_taxable_income",
-}
 
 
 class AcroFormCoverAnalyzer:
@@ -133,9 +125,11 @@ class AcroFormCoverAnalyzer:
                     source=f"acroform:{_WITHDRAWAL_FIELD}",
                 )
 
-        # Line 15 + Line 20 code+value rows
-        _apply_coded_rows(field_map, _LINE15_PAIRS, _LINE15_CODE_MAP, emitted)
-        _apply_coded_rows(field_map, _LINE20_PAIRS, _LINE20_CODE_MAP, emitted)
+        # Coded K-1 rows. Rows with "SEE STMT" are intentionally left for
+        # attached-statement extraction.
+        _apply_coded_rows("13", field_map, _LINE13_PAIRS, emitted)
+        _apply_coded_rows("15", field_map, _LINE15_PAIRS, emitted)
+        _apply_coded_rows("20", field_map, _LINE20_PAIRS, emitted)
 
         log.info(
             "acroform_cover analyze done",
@@ -170,15 +164,15 @@ def _is_numeric(raw: str) -> bool:
 
 
 def _apply_coded_rows(
+    box: str,
     field_map: dict[str, str],
     pairs: list[tuple[str, str]],
-    code_map: dict[str, str],
     emitted: dict[str, FieldValue],
 ) -> None:
     for code_field, val_field in pairs:
-        code = field_map.get(code_field, "").strip()
+        code = field_map.get(code_field, "").strip().upper()
         raw = field_map.get(val_field, "").strip()
-        schema_name = code_map.get(code)
+        schema_name = field_for_code(box, code, cover=True)
         if schema_name and raw and _is_numeric(raw):
             emitted[schema_name] = FieldValue(
                 field=schema_name, value=raw, source=f"acroform:{code_field}={code}"

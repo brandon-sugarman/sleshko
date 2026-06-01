@@ -50,19 +50,19 @@ def run_matrix(settings: Settings, pipelines: list[Pipeline]) -> MatrixReport:
 
 def main() -> None:
     settings = load_settings()
-    import strategies  # noqa: F401 — populates EXTRACTION_STRATEGIES / ANALYSIS_STRATEGIES
+    import strategies  # noqa: F401 - populates EXTRACTION_STRATEGIES / ANALYSIS_STRATEGIES
 
-    # Build only the meaningful extraction×analysis pairs.  The full cartesian
-    # product includes invalid combos (e.g. acroform has no text for gemini_text,
-    # pymupdf_text has no source_bytes for gemini_pdf).
-    _PAIRS: list[tuple[str, str]] = [
+    # Build only meaningful extraction/analysis pairs; the full cartesian product
+    # includes invalid combos such as text-only IR feeding native-PDF analysis.
+    pairs: list[tuple[str, str]] = [
         ("acroform", "acroform_cover"),
         ("pymupdf_text", "gemini_text"),
         ("pymupdf_full", "gemini_pdf"),
+        ("pymupdf_full", "hybrid_max_fidelity"),
     ]
     pipelines = [
         build_matrix(settings, [ext], [ana])[0]
-        for ext, ana in _PAIRS
+        for ext, ana in pairs
         if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES
     ]
     if not pipelines:
