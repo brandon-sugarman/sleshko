@@ -1,1 +1,1 @@
-@AGENTS.md
+Follow the convetions in @AGENTS.md
