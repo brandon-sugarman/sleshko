@@ -48,12 +48,15 @@ class ExtractedDocument:
     """The intermediate representation shared by both pipeline layers.
 
     Produced by an `ExtractionStrategy`, consumed by an `AnalysisStrategy`.
+    `source_bytes` is optional raw PDF bytes — set by extractors that want to
+    make the original file available to vision/native-PDF analysis strategies.
     """
 
     doc_name: str
     producer: str
     pages: tuple[ExtractedPage, ...]
     notes: tuple[str, ...] = field(default_factory=tuple)
+    source_bytes: bytes | None = None
 
     @property
     def full_text(self) -> str:
