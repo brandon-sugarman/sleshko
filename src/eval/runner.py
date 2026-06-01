@@ -8,7 +8,7 @@ from domain.field_catalog import FieldSpec, build_catalog
 from domain.scoring import DocumentScore, MatrixReport, PipelineScore
 from eval.eval_set import ExpectedRecord, load_eval_set
 from eval.scorer import score_document
-from logger import dump_rubric, make_logger
+from logger import dump_report, dump_rubric, make_logger
 from registry import ANALYSIS_STRATEGIES, EXTRACTION_STRATEGIES, Pipeline, build_matrix
 
 log = make_logger("eval.runner")
@@ -70,9 +70,16 @@ def main() -> None:
     report = run_matrix(settings, pipelines)
     from eval.report import render_console, render_doc_scores
 
-    print(render_console(report))
+    leaderboard = render_console(report)
+    per_doc = render_doc_scores(report)
+    full_report = leaderboard + "\n\n" + per_doc
+
+    report_path = dump_report(full_report)
+    log.info("report written", {"path": str(report_path)})
+
+    print(leaderboard)
     print()
-    print(render_doc_scores(report))
+    print(per_doc)
 
 
 if __name__ == "__main__":

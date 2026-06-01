@@ -38,14 +38,19 @@ def _configure() -> None:
 
 
 def dump_rubric(data: dict[str, Any]) -> Path:
-    """Write *data* as rubric.json inside the current run folder.
-
-    Returns the path written so callers can log it.
-    """
+    """Write *data* as rubric.json inside the current run folder."""
     _configure()
     rubric_path = _RUN_DIR / "rubric.json"
     rubric_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
     return rubric_path
+
+
+def dump_report(text: str) -> Path:
+    """Write the console report as report.txt inside the current run folder."""
+    _configure()
+    report_path = _RUN_DIR / "report.txt"
+    report_path.write_text(text, encoding="utf-8")
+    return report_path
 
 
 class _StructuredLogger:
