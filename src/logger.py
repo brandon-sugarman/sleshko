@@ -7,15 +7,18 @@ from pathlib import Path
 from typing import Any
 
 _CONFIGURED = False
-_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOGS_ROOT = Path(__file__).resolve().parent.parent / "logs"
+_RUN_DIR: Path = _LOGS_ROOT  # updated in _configure to the per-run subfolder
 
 
 def _configure() -> None:
-    global _CONFIGURED
+    global _CONFIGURED, _RUN_DIR
     if _CONFIGURED:
         return
 
-    _LOG_DIR.mkdir(exist_ok=True)
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _RUN_DIR = _LOGS_ROOT / f"run_{run_ts}"
+    _RUN_DIR.mkdir(parents=True, exist_ok=True)
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -25,14 +28,29 @@ def _configure() -> None:
     console.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     root.addHandler(console)
 
-    # File sink — one timestamped file per run, kept in logs/
-    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = _LOG_DIR / f"run_{run_ts}.log"
+    # File sink — one file per run inside the run subfolder
+    log_path = _RUN_DIR / "run.log"
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     root.addHandler(file_handler)
 
     _CONFIGURED = True
+
+
+def dump_pipeline_snapshot(data: dict[str, Any]) -> Path:
+    """Write *data* as pipeline_snapshot.json inside the current run folder."""
+    _configure()
+    snapshot_path = _RUN_DIR / "pipeline_snapshot.json"
+    snapshot_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    return snapshot_path
+
+
+def dump_report(text: str) -> Path:
+    """Write the console report as report.txt inside the current run folder."""
+    _configure()
+    report_path = _RUN_DIR / "report.txt"
+    report_path.write_text(text, encoding="utf-8")
+    return report_path
 
 
 class _StructuredLogger:
