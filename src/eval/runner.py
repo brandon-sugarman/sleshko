@@ -20,8 +20,20 @@ log = make_logger("eval.runner")
 # share a strategy pairing but differ only by Gemini config.
 GEMINI_CONFIGS: list[tuple[str, str, int]] = [
     ("flash/off", "gemini-2.5-flash", THINKING_OFF),
-    ("flash/dyn", "gemini-2.5-flash", THINKING_DYNAMIC),
+    # ("flash/dyn", "gemini-2.5-flash", THINKING_DYNAMIC),
     ("pro/dyn", "gemini-2.5-pro", THINKING_DYNAMIC),
+]
+
+# Meaningful (extraction, analysis) pairings benchmarked by the matrix. The full
+# cartesian product includes invalid combos (e.g. text-only IR feeding native-PDF
+# analysis), so the active set is curated here. Shared with sample_outputs_runner
+# so the manual-inspection dumps stay in sync with what the eval benchmarks.
+ACTIVE_PAIRS: list[tuple[str, str]] = [
+    # ("acroform", "acroform_cover"),
+    # ("pymupdf_text", "gemini_text"),
+    # ("pymupdf_full", "gemini_pdf"),
+    ("pymupdf_full", "gemini_vision"),
+    ("pymupdf_full", "hybrid_max_fidelity"),
 ]
 
 
@@ -63,22 +75,13 @@ def main() -> None:
     settings = load_settings()
     import strategies  # noqa: F401 - populates EXTRACTION_STRATEGIES / ANALYSIS_STRATEGIES
 
-    # Build only meaningful extraction/analysis pairs; the full cartesian product
-    # includes invalid combos such as text-only IR feeding native-PDF analysis.
-    pairs: list[tuple[str, str]] = [
-        # ("acroform", "acroform_cover"),
-        # ("pymupdf_text", "gemini_text"),
-        # ("pymupdf_full", "gemini_pdf"),
-        ("pymupdf_full", "gemini_vision"),
-        ("pymupdf_full", "hybrid_max_fidelity"),
-    ]
-    # Benchmark every pairing under each Gemini config. The strategy clients are
-    # built from per-config settings; run_matrix's `settings` only supplies the
-    # model-independent eval-set and PDF paths.
+    # Benchmark every active pairing under each Gemini config. The strategy
+    # clients are built from per-config settings; run_matrix's `settings` only
+    # supplies the model-independent eval-set and PDF paths.
     pipelines: list[Pipeline] = []
     for label, model, budget in GEMINI_CONFIGS:
         cfg = load_settings(gemini_model=model, gemini_thinking_budget=budget)
-        for ext, ana in pairs:
+        for ext, ana in ACTIVE_PAIRS:
             if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES:
                 pipeline = build_matrix(cfg, [ext], [ana])[0]
                 pipelines.append(replace(pipeline, label=label))

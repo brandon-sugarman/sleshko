@@ -1,7 +1,15 @@
+"""
+
+Run via the dump_samples.py entry point at the repo root:
+    uv run python dump_samples.py                 # all non-eval PDFs
+    uv run python dump_samples.py some_doc.pdf     # named PDF(s)
+"""
+
 from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,33 +18,55 @@ from config import Settings, load_settings
 from domain.extraction_result import ExtractionResult
 from domain.field_catalog import FieldSpec, build_catalog
 from eval.eval_set import load_eval_set
-from registry import build_matrix
-
-_PIPELINE_EXTRACTION = "pymupdf_full"
-_PIPELINE_ANALYSIS = "hybrid_max_fidelity"
+from eval.runner import ACTIVE_PAIRS, GEMINI_CONFIGS
+from registry import (
+    ANALYSIS_STRATEGIES,
+    EXTRACTION_STRATEGIES,
+    Pipeline,
+    build_matrix,
+)
 
 
 def main(argv: list[str] | None = None) -> None:
-    settings = load_settings()
+    base_settings = load_settings()
     import strategies  # noqa: F401 - populates strategy registries
 
     requested = list(argv if argv is not None else sys.argv[1:])
-    pdf_paths = _resolve_pdf_paths(settings, requested)
-    pipeline = build_matrix(settings, [_PIPELINE_EXTRACTION], [_PIPELINE_ANALYSIS])[0]
+    pdf_paths = _resolve_pdf_paths(base_settings, requested)
+    pipelines = _build_pipelines()
     catalog = list(build_catalog())
 
     output_dir = _make_output_dir()
     index: list[dict[str, Any]] = []
     for pdf_path in pdf_paths:
-        result = pipeline.run(pdf_path.name, pdf_path.read_bytes())
-        payload = _build_payload(result, catalog)
-        output_path = output_dir / f"{pdf_path.stem}.{_PIPELINE_ANALYSIS}.json"
-        output_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        index.append({"pdf": pdf_path.name, "output": str(output_path), "fields_emitted": len(result.fields)})
+        pdf_bytes = pdf_path.read_bytes()
+        for pipeline in pipelines:
+            result = pipeline.run(pdf_path.name, pdf_bytes)
+            payload = _build_payload(result, catalog)
+            output_path = output_dir / f"{pdf_path.stem}.{_slug(pipeline.name)}.json"
+            output_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            index.append({
+                "pdf": pdf_path.name,
+                "pipeline": pipeline.name,
+                "output": str(output_path),
+                "fields_emitted": len(result.fields),
+            })
 
     index_path = output_dir / "index.json"
     index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
     print(f"wrote {len(index)} sample output files to {output_dir}")
+
+
+def _build_pipelines() -> list[Pipeline]:
+    """Every Gemini config x active pairing, matching the eval runner."""
+    pipelines: list[Pipeline] = []
+    for label, model, budget in GEMINI_CONFIGS:
+        cfg = load_settings(gemini_model=model, gemini_thinking_budget=budget)
+        for ext, ana in ACTIVE_PAIRS:
+            if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES:
+                pipeline = build_matrix(cfg, [ext], [ana])[0]
+                pipelines.append(replace(pipeline, label=label))
+    return pipelines
 
 
 def _resolve_pdf_paths(settings: Settings, requested: list[str]) -> list[Path]:
@@ -81,6 +111,12 @@ def _resolve_pdf_path(pdfs_dir: Path, raw: str) -> Path:
     if not path.exists():
         raise FileNotFoundError(path)
     return path
+
+
+def _slug(pipeline_name: str) -> str:
+    """Make a pipeline name safe for a filename (drops '[', ']', '/', spaces)."""
+    cleaned = pipeline_name.replace("[", "").replace("]", "").replace(" + ", "+")
+    return cleaned.replace("/", "-").replace(" ", "_")
 
 
 def _make_output_dir() -> Path:
