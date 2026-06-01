@@ -7,6 +7,8 @@ from config import Settings
 from domain.extraction_result import ExtractionResult
 from ports import AnalysisStrategy, ExtractionStrategy
 
+# Exposed so runner and other modules can check registration without re-importing.
+
 ExtractionFactory = Callable[[Settings], ExtractionStrategy]
 AnalysisFactory = Callable[[Settings], AnalysisStrategy]
 

@@ -18,6 +18,23 @@ EXTRACTION RULES (follow exactly):
 6. Return ONLY a valid JSON object — no markdown fences, no explanation.
 """.strip()
 
+# K-1 packages often include non-data pages mixed in with the real content.
+# Gemini must be told to ignore them, otherwise it hallucinates values from
+# generic IRS instructions, cover letters, and transmittal sheets.
+_PAGE_TYPE_GUIDANCE = """
+PAGE TYPE GUIDANCE:
+The document may contain several page types — only extract data from the last three:
+  - IGNORE: mailing/transmittal cover sheets (recipient address, "SAMPLE" watermarks)
+  - IGNORE: cover letters (explanatory prose, "please replace your K-1" language)
+  - IGNORE: generic IRS instruction/code pages (tables of box codes and where to report them,
+            starting with headings like "Code", "Report on", line-by-line instructions)
+  - EXTRACT FROM: the actual K-1 cover page (IRS Schedule K-1 Form 1065 with Part I/II/III boxes)
+  - EXTRACT FROM: attached statement pages (supplemental detail for "SEE STMT" items)
+  - EXTRACT FROM: formal footnote pages (narrative notes directly referencing K-1 line items)
+
+Note: the actual K-1 cover page is not always the first page in the PDF.
+""".strip()
+
 
 def _field_lines(fields: list[FieldSpec]) -> str:
     return "\n".join(
@@ -29,6 +46,8 @@ def _field_lines(fields: list[FieldSpec]) -> str:
 def build_text_prompt(document_text: str, fields: list[FieldSpec]) -> str:
     """Prompt for the text-based approach: raw extracted text → JSON."""
     return f"""You are extracting specific fields from an IRS Schedule K-1 (Form 1065) tax document.
+
+{_PAGE_TYPE_GUIDANCE}
 
 {_RULES}
 
@@ -48,7 +67,8 @@ Return a JSON object containing only the fields you found with non-zero / non-em
 def build_pdf_prompt(fields: list[FieldSpec]) -> str:
     """Prompt for the native-PDF approach: Gemini reads the attached PDF directly."""
     return f"""You are extracting specific fields from the attached IRS Schedule K-1 (Form 1065) PDF.
-The PDF may contain a cover page, supplemental schedules, and scanned statement pages.
+
+{_PAGE_TYPE_GUIDANCE}
 
 {_RULES}
 
@@ -57,5 +77,5 @@ FIELDS TO EXTRACT (JSON key: expected type):
 {_field_lines(fields)}
 }}
 
-Read every page of the attached PDF carefully — including any supplemental statement pages.
+Read every relevant page of the attached PDF carefully.
 Return a JSON object containing only the fields you found with non-zero / non-empty values."""

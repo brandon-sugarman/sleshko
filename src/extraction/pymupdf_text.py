@@ -13,8 +13,14 @@ class PyMuPdfTextExtractor:
     """Extracts embedded text from every PDF page using PyMuPDF.
 
     Fills the `text` facet of each `ExtractedPage`. Works on both fillable and
-    flattened PDFs; on scanned-image-only pages the text will be empty (use the
-    `gemini_pdf` analysis strategy for those, which sends raw bytes to Gemini).
+    flattened PDFs. Important characteristics of the sample set:
+      - doc_2 page 2: a statement page rendered as a raster image — text will
+        be empty; use gemini_pdf analysis to read it.
+      - doc_3 pages 1-2: transmittal sheet and cover letter (not K-1 data).
+      - doc_3 page 3: the actual K-1 cover (not the first page).
+      - doc_3 page 7: generic IRS instruction/code page — 7 000+ chars of
+        non-taxpayer text that can cause LLM hallucination if not filtered.
+        The gemini_text prompt explicitly instructs Gemini to ignore such pages.
     """
 
     name = "pymupdf_text"
