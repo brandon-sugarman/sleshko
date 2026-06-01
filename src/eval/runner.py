@@ -31,10 +31,10 @@ GEMINI_CONFIGS: list[tuple[str, str, int]] = [
 ACTIVE_PAIRS: list[tuple[str, str]] = [
     ("pymupdf_full", "hybrid_max_fidelity"), #best, 100% exact, but overfits
     ("pymupdf_full", "gemini_vision"), #strongest and most realistic, NZ 95.9% recall
-    ("pymupdf_full", "acroform_gemini_selective"), #strong, more false+
-    ("pymupdf_full", "gemini_pdf"), #mid, lower recall
-    ("acroform", "acroform_cover"), #weak recall
-    ("pymupdf_text", "gemini_text"), #worst recall
+    # ("pymupdf_full", "acroform_gemini_selective"), #strong, more false+
+    # ("pymupdf_full", "gemini_pdf"), #mid, lower recall
+    # ("acroform", "acroform_cover"), #weak recall
+    # ("pymupdf_text", "gemini_text"), #worst recall
 ]
 
 
