@@ -14,13 +14,21 @@ Analysis strategies:
   gemini_pdf          - raw PDF bytes to Gemini native read
   gemini_vision       - per-page parallel vision extraction (LLM-forward)
   hybrid_max_fidelity - deterministic K-1 extraction with image fallback
+  acroform_gemini_selective - AcroForm first, page-local Gemini fallback
 
 See docs/PLANNING.md for the extension guide.
 """
 
 from __future__ import annotations
 
-from analysis import acroform_cover, gemini_pdf, gemini_text, gemini_vision, hybrid_max_fidelity
+from analysis import (
+    acroform_cover,
+    acroform_gemini_selective,
+    gemini_pdf,
+    gemini_text,
+    gemini_vision,
+    hybrid_max_fidelity,
+)
 from extraction import acroform, pymupdf_text
 from registry import register_analysis, register_extraction
 
@@ -35,3 +43,7 @@ register_analysis(gemini_text.GeminiTextAnalyzer.name, gemini_text.build)
 register_analysis(gemini_pdf.GeminiPdfAnalyzer.name, gemini_pdf.build)
 register_analysis(gemini_vision.GeminiVisionAnalyzer.name, gemini_vision.build)
 register_analysis(hybrid_max_fidelity.HybridMaxFidelityAnalyzer.name, hybrid_max_fidelity.build)
+register_analysis(
+    acroform_gemini_selective.AcroFormGeminiSelectiveAnalyzer.name,
+    acroform_gemini_selective.build,
+)
