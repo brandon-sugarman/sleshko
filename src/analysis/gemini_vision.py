@@ -18,13 +18,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from config import Settings
 from domain.document import ExtractedDocument
-from domain.extraction_result import ExtractionResult, FieldValue
+from domain.extraction_result import ExtractionResult, FieldValue, merge_pages_first_wins
 from domain.field_catalog import build_catalog
 from domain.page_roles import select_data_pages
 from infra.gemini_client import GeminiClient, build_client, parse_gemini_fields
 from infra.pdf_render import render_page_pngs
 from logger import make_logger
-from prompts.k1_extraction import build_vision_page_prompt
+from prompts.k1_extraction import build_page_text_context, build_vision_page_prompt
 
 log = make_logger("analysis.gemini_vision")
 
@@ -57,8 +57,8 @@ class GeminiVisionAnalyzer:
             {"doc": document.doc_name, "pages_total": len(page_texts), "pages_selected": selected},
         )
 
-        per_page = self._extract_pages(images)
-        emitted = _merge_pages(per_page)
+        per_page = self._extract_pages(images, page_texts)
+        emitted = merge_pages_first_wins(per_page)
 
         log.info(
             "gemini_vision done",
@@ -66,16 +66,30 @@ class GeminiVisionAnalyzer:
         )
         return ExtractionResult(doc_name=document.doc_name, pipeline=self.name, fields=emitted)
 
-    def _extract_pages(self, images: dict[int, bytes]) -> list[tuple[int, dict[str, FieldValue]]]:
+    def _extract_pages(
+        self, images: dict[int, bytes], page_texts: dict[int, str]
+    ) -> list[tuple[int, dict[str, FieldValue]]]:
         ordered = sorted(images.items())
         if not ordered:
             return []
         workers = min(_MAX_PARALLEL_PAGES, len(ordered))
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            return list(pool.map(lambda item: self._extract_one(*item), ordered))
+            return list(
+                pool.map(
+                    lambda item: self._extract_one(item[0], item[1], page_texts.get(item[0], "")),
+                    ordered,
+                )
+            )
 
-    def _extract_one(self, page_idx: int, png: bytes) -> tuple[int, dict[str, FieldValue]]:
-        response = self._client.generate([self._client.image_part(png), self._prompt])
+    def _extract_one(
+        self, page_idx: int, png: bytes, page_text: str
+    ) -> tuple[int, dict[str, FieldValue]]:
+        contents: list = [self._client.image_part(png)]
+        text_context = build_page_text_context(page_text)
+        if text_context:
+            contents.append(text_context)
+        contents.append(self._prompt)
+        response = self._client.generate(contents)
         parsed = parse_gemini_fields(response, self._catalog)
         fields = {
             name: FieldValue(field=fv.field, value=fv.value, source=f"vision:p{page_idx + 1}")
@@ -88,17 +102,3 @@ class GeminiVisionAnalyzer:
 def build(settings: Settings) -> GeminiVisionAnalyzer:
     client = build_client(settings.gemini)
     return GeminiVisionAnalyzer(client=client, dpi=settings.vision_dpi)
-
-
-def _merge_pages(per_page: list[tuple[int, dict[str, FieldValue]]]) -> dict[str, FieldValue]:
-    """Combine per-page field maps. Earlier (lower-index) pages win on conflict.
-
-    Page order is meaningful: the Schedule K-1 cover precedes its attached
-    statements, so when two pages claim the same field the cover's value is kept.
-    Most fields are page-exclusive, so conflicts are rare.
-    """
-    merged: dict[str, FieldValue] = {}
-    for _page_idx, fields in sorted(per_page):
-        for name, value in fields.items():
-            merged.setdefault(name, value)
-    return merged

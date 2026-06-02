@@ -15,18 +15,26 @@ DEFAULT_VISION_DPI = 200
 
 # thinking_budget for Gemini reasoning: 0 disables it, -1 lets the model size
 # its own budget (dynamic). Dynamic favors accuracy; the eval runner overrides
-# it per config to compare cost vs. accuracy.
+# it per config to compare cost vs. accuracy. Applies to gemini-2.5-* only.
 DEFAULT_GEMINI_THINKING_BUDGET = -1
+
+DEFAULT_GEMINI_THINKING_LEVEL: str | None = None
 
 
 @dataclass(frozen=True)
 class GeminiSettings:
     """Gemini-only tunables, grouped so extraction/analysis strategies that
-    don't call Gemini stay decoupled from provider configuration."""
+    don't call Gemini stay decoupled from provider configuration.
+
+    `thinking_budget` is honored by gemini-2.5-* models; `thinking_level` by
+    gemini-3.x models. The two are mutually exclusive at the API, so the
+    GeminiClient selects one based on the model family rather than sending both.
+    """
 
     model: str
     max_attempts: int
     thinking_budget: int
+    thinking_level: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,13 +50,15 @@ def load_settings(
     repo_root: Path = _REPO_ROOT,
     gemini_model: str | None = None,
     gemini_thinking_budget: int | None = None,
+    gemini_thinking_level: str | None = None,
 ) -> Settings:
     """Factory for default configuration. All tunables live here; strategy code
     never inlines model names, DPI, retry counts, or paths.
 
-    `gemini_model` and `gemini_thinking_budget` override the defaults so the
-    eval runner can benchmark model/reasoning configurations. The Gemini API
-    key is read from the environment by GeminiClient, not stored in Settings.
+    `gemini_model`, `gemini_thinking_budget`, and `gemini_thinking_level`
+    override the defaults so the eval runner can benchmark model/reasoning
+    configurations across model families. The Gemini API key is read from the
+    environment by GeminiClient, not stored in Settings.
     """
     return Settings(
         pdfs_dir=repo_root / "pdfs",
@@ -62,6 +72,11 @@ def load_settings(
                 gemini_thinking_budget
                 if gemini_thinking_budget is not None
                 else DEFAULT_GEMINI_THINKING_BUDGET
+            ),
+            thinking_level=(
+                gemini_thinking_level
+                if gemini_thinking_level is not None
+                else DEFAULT_GEMINI_THINKING_LEVEL
             ),
         ),
     )

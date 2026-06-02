@@ -7,6 +7,8 @@ from domain.extraction_result import FieldValue
 from eval.normalize import normalize_int
 from k1_codes import field_for_code
 
+# NOTE: regex-based extractor that can be expanded on to be more generalized
+
 _AMOUNT = r"\(?-?\$?[\d,]+(?:\.\d*)?\)?"
 _TOTAL_AFTER_RE = re.compile(
     rf"TOTAL TO SCHEDULE K-1,\s*(?:BOX|LINE)\s*(?P<box>\d+),?\s*"

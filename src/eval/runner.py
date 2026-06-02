@@ -3,25 +3,46 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from typing import NamedTuple
 
 from config import Settings, load_settings
 from domain.field_catalog import FieldSpec, build_catalog
 from domain.scoring import DocumentScore, MatrixReport, PipelineScore
 from eval.eval_set import ExpectedRecord, load_eval_set
 from eval.scorer import score_document
-from infra.gemini_client import THINKING_DYNAMIC, THINKING_OFF
+from infra.gemini_client import (
+    THINKING_DYNAMIC,
+    THINKING_LEVEL_HIGH,
+    THINKING_LEVEL_LOW,
+    THINKING_OFF,
+)
 from logger import dump_pipeline_snapshot, dump_report, make_logger
 from registry import ANALYSIS_STRATEGIES, EXTRACTION_STRATEGIES, Pipeline, build_matrix
 
 log = make_logger("eval.runner")
 
-# Gemini configs benchmarked against every active strategy pairing. Each tuple
-# is (label, model, thinking_budget); the label disambiguates pipelines that
-# share a strategy pairing but differ only by Gemini config.
-GEMINI_CONFIGS: list[tuple[str, str, int]] = [
-    ("flash/off", "gemini-2.5-flash", THINKING_OFF),
-    # ("flash/dyn", "gemini-2.5-flash", THINKING_DYNAMIC),
-    ("pro/dyn", "gemini-2.5-pro", THINKING_DYNAMIC),
+
+class GeminiConfig(NamedTuple):
+    """One benchmarked Gemini configuration. `label` disambiguates pipelines
+    that share a strategy pairing but differ only by model/reasoning.
+
+    `thinking_budget` is used by gemini-2.5-* models, `thinking_level` by
+    gemini-3.x. Set only the one valid for the family; the client ignores the
+    other (sending both to gemini-3.x is a 400).
+    """
+
+    label: str
+    model: str
+    thinking_budget: int | None = None
+    thinking_level: str | None = None
+
+
+# Gemini configs benchmarked against every active strategy pairing.
+GEMINI_CONFIGS: list[GeminiConfig] = [
+    GeminiConfig("flash/off", "gemini-2.5-flash", thinking_budget=THINKING_OFF),
+    GeminiConfig("pro/dyn", "gemini-2.5-pro", thinking_budget=THINKING_DYNAMIC),
+    GeminiConfig("3.1pro/high", "gemini-3.1-pro-preview", thinking_level=THINKING_LEVEL_HIGH),
+    GeminiConfig("3flash/low", "gemini-3-flash-preview", thinking_level=THINKING_LEVEL_LOW),
 ]
 
 # Meaningful (extraction, analysis) pairings benchmarked by the matrix. The full
@@ -29,12 +50,13 @@ GEMINI_CONFIGS: list[tuple[str, str, int]] = [
 # analysis), so the active set is curated here. Shared with sample_outputs_runner
 # so the manual-inspection dumps stay in sync with what the eval benchmarks.
 ACTIVE_PAIRS: list[tuple[str, str]] = [
-    ("pymupdf_full", "hybrid_max_fidelity"), #best, 100% exact, but overfits
-    ("pymupdf_full", "gemini_vision"), #strongest and most realistic, NZ 95.9% recall
-    # ("pymupdf_full", "acroform_gemini_selective"), #strong, more false+
-    # ("pymupdf_full", "gemini_pdf"), #mid, lower recall
-    # ("acroform", "acroform_cover"), #weak recall
-    # ("pymupdf_text", "gemini_text"), #worst recall
+    ("pymupdf_full", "hybrid_max_fidelity"),       # 100% exact, but overfit to 3 docs
+    ("pymupdf_full", "gemini_vision_acroform"),    # vision + acroform cover overrides — best generalizable
+    ("pymupdf_full", "gemini_vision"),             # pure vision baseline for comparison
+    ("pymupdf_full", "acroform_gemini_selective"), # strong but more false+
+    ("pymupdf_full", "gemini_pdf"), #mid, lower recall
+    ("acroform", "acroform_cover"), #weak recall
+    ("pymupdf_text", "gemini_text"), #worst recall
 ]
 
 
@@ -80,12 +102,16 @@ def main() -> None:
     # clients are built from per-config settings; run_matrix's `settings` only
     # supplies the model-independent eval-set and PDF paths.
     pipelines: list[Pipeline] = []
-    for label, model, budget in GEMINI_CONFIGS:
-        cfg = load_settings(gemini_model=model, gemini_thinking_budget=budget)
+    for gc in GEMINI_CONFIGS:
+        cfg = load_settings(
+            gemini_model=gc.model,
+            gemini_thinking_budget=gc.thinking_budget,
+            gemini_thinking_level=gc.thinking_level,
+        )
         for ext, ana in ACTIVE_PAIRS:
             if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES:
                 pipeline = build_matrix(cfg, [ext], [ana])[0]
-                pipelines.append(replace(pipeline, label=label))
+                pipelines.append(replace(pipeline, label=gc.label))
     if not pipelines:
         log.warning("no strategies registered; register extraction/analysis strategies first", {})
         return
@@ -94,8 +120,13 @@ def main() -> None:
         "registered_extraction_strategies": list(EXTRACTION_STRATEGIES),
         "registered_analysis_strategies": list(ANALYSIS_STRATEGIES),
         "gemini_configs": [
-            {"label": label, "model": model, "thinking_budget": budget}
-            for label, model, budget in GEMINI_CONFIGS
+            {
+                "label": gc.label,
+                "model": gc.model,
+                "thinking_budget": gc.thinking_budget,
+                "thinking_level": gc.thinking_level,
+            }
+            for gc in GEMINI_CONFIGS
         ],
         "pipelines": [
             {"name": p.name, "label": p.label, "extraction": p.extraction.name, "analysis": p.analysis.name}

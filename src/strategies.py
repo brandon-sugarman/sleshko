@@ -9,11 +9,12 @@ Extraction strategies:
   pymupdf_full   - embedded text, coordinates, form fields, and raw PDF bytes
 
 Analysis strategies:
-  acroform_cover      - deterministic field map for the K-1 AcroForm template
-  gemini_text         - full-text to Gemini structured JSON
-  gemini_pdf          - raw PDF bytes to Gemini native read
-  gemini_vision       - per-page parallel vision extraction (LLM-forward)
-  hybrid_max_fidelity - deterministic K-1 extraction with image fallback
+  acroform_cover           - deterministic field map for the K-1 AcroForm template
+  gemini_text              - full-text to Gemini structured JSON
+  gemini_pdf               - raw PDF bytes to Gemini native read
+  gemini_vision            - per-page parallel vision extraction (LLM-forward)
+  gemini_vision_acroform   - gemini_vision + AcroForm cover overrides (best generalizable)
+  hybrid_max_fidelity      - deterministic K-1 extraction with image fallback
   acroform_gemini_selective - AcroForm first, page-local Gemini fallback
 
 See docs/PLANNING.md for the extension guide.
@@ -27,6 +28,7 @@ from analysis import (
     gemini_pdf,
     gemini_text,
     gemini_vision,
+    gemini_vision_acroform,
     hybrid_max_fidelity,
 )
 from extraction import acroform, pymupdf_text
@@ -42,6 +44,7 @@ register_analysis(acroform_cover.AcroFormCoverAnalyzer.name, acroform_cover.buil
 register_analysis(gemini_text.GeminiTextAnalyzer.name, gemini_text.build)
 register_analysis(gemini_pdf.GeminiPdfAnalyzer.name, gemini_pdf.build)
 register_analysis(gemini_vision.GeminiVisionAnalyzer.name, gemini_vision.build)
+register_analysis(gemini_vision_acroform.GeminiVisionAcroformAnalyzer.name, gemini_vision_acroform.build)
 register_analysis(hybrid_max_fidelity.HybridMaxFidelityAnalyzer.name, hybrid_max_fidelity.build)
 register_analysis(
     acroform_gemini_selective.AcroFormGeminiSelectiveAnalyzer.name,

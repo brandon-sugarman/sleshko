@@ -5,8 +5,8 @@ and writes the extracted fields per (config, pairing, PDF) for manual
 comparison against the source document. No scoring.
 
 Run using:
-    uv run python dump_samples.py                 # all non-eval PDFs
-    uv run python dump_samples.py doc_1.pdf        # named PDF(s)
+    uv run python dump_samples.py                                             # all non-eval PDFs
+    uv run python dump_samples.py enviva_2021_sample_k1_1000_units.pdf        # named PDF(s)
 """
 
 from __future__ import annotations

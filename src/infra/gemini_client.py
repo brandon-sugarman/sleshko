@@ -35,6 +35,30 @@ log = make_logger("infra.gemini_client")
 THINKING_OFF = 0
 THINKING_DYNAMIC = -1
 
+# Gemini 3.x dropped thinking_budget for a discrete thinking_level and returns a
+# 400 if both are sent. The client routes on model family so callers can keep
+# passing a budget; gemini-3.x ignores it and uses thinking_level instead.
+THINKING_LEVEL_LOW = "low"
+THINKING_LEVEL_HIGH = "high"
+DEFAULT_GEMINI_3_THINKING_LEVEL = THINKING_LEVEL_HIGH
+
+
+def _is_gemini_3(model: str) -> bool:
+    return model.startswith("gemini-3")
+
+
+def _build_thinking_config(
+    model: str, thinking_budget: int, thinking_level: str | None
+) -> types.ThinkingConfig:
+    """Select the reasoning control valid for the model family. gemini-3.x uses
+    thinking_level; gemini-2.5-* uses thinking_budget. Never both — that is a 400.
+    """
+    if _is_gemini_3(model):
+        return types.ThinkingConfig(
+            thinking_level=thinking_level or DEFAULT_GEMINI_3_THINKING_LEVEL
+        )
+    return types.ThinkingConfig(thinking_budget=thinking_budget)
+
 
 def _load_dotenv() -> None:
     """Best-effort .env loader so the API key works without exporting it."""
@@ -59,7 +83,13 @@ class GeminiClient:
     a list of strings and/or `types.Part` objects (text, images, PDF bytes).
     """
 
-    def __init__(self, model: str, max_attempts: int = 3, thinking_budget: int = THINKING_OFF) -> None:
+    def __init__(
+        self,
+        model: str,
+        max_attempts: int = 3,
+        thinking_budget: int = THINKING_OFF,
+        thinking_level: str | None = None,
+    ) -> None:
         _load_dotenv()
         api_key = os.getenv("GEMINI_API_KEY", "")
         if not api_key:
@@ -68,7 +98,7 @@ class GeminiClient:
         self.model = model
         self.max_attempts = max_attempts
         self._config = types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
+            thinking_config=_build_thinking_config(model, thinking_budget, thinking_level)
         )
 
     def generate(self, contents: list[Any]) -> str:
@@ -107,6 +137,7 @@ def build_client(gemini: GeminiSettings) -> GeminiClient:
         model=gemini.model,
         max_attempts=gemini.max_attempts,
         thinking_budget=gemini.thinking_budget,
+        thinking_level=gemini.thinking_level,
     )
 
 

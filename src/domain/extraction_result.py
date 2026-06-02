@@ -36,3 +36,20 @@ class ExtractionResult:
 
     def get(self, name: FieldName) -> FieldValue | None:
         return self.fields.get(name)
+
+
+def merge_pages_first_wins(
+    per_page: list[tuple[int, dict[FieldName, FieldValue]]],
+) -> dict[FieldName, FieldValue]:
+    """Combine per-page field maps, keeping the lowest-index page on conflict.
+
+    Page order is meaningful for K-1 packages: the Schedule K-1 cover precedes
+    its attached statements, so when two pages claim the same field the cover's
+    value wins. Most fields are page-exclusive, so conflicts are rare. Shared by
+    the per-page analysis strategies (vision, routed, acroform-selective).
+    """
+    merged: dict[FieldName, FieldValue] = {}
+    for _page_idx, fields in sorted(per_page):
+        for name, value in fields.items():
+            merged.setdefault(name, value)
+    return merged

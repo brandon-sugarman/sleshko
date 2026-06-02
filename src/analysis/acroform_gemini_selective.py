@@ -13,13 +13,13 @@ from concurrent.futures import ThreadPoolExecutor
 from analysis.acroform_cover import AcroFormCoverAnalyzer
 from config import Settings
 from domain.document import ExtractedDocument
-from domain.extraction_result import ExtractionResult, FieldValue
+from domain.extraction_result import ExtractionResult, FieldValue, merge_pages_first_wins
 from domain.field_catalog import FieldSpec, build_catalog
 from domain.page_roles import select_data_pages
 from infra.gemini_client import GeminiClient, build_client, parse_gemini_fields
 from infra.pdf_render import render_page_pngs
 from logger import make_logger
-from prompts.k1_extraction import build_vision_page_prompt
+from prompts.k1_extraction import build_page_text_context, build_vision_page_prompt
 
 log = make_logger("analysis.acroform_gemini_selective")
 
@@ -85,7 +85,7 @@ class AcroFormGeminiSelectiveAnalyzer:
                     ordered,
                 )
             )
-        return _merge_pages(per_page)
+        return merge_pages_first_wins(per_page)
 
     def _extract_one(
         self,
@@ -96,7 +96,7 @@ class AcroFormGeminiSelectiveAnalyzer:
         fields: list[FieldSpec],
     ) -> tuple[int, dict[str, FieldValue]]:
         contents: list = [self._client.image_part(png)]
-        text_context = _text_context(page_text)
+        text_context = build_page_text_context(page_text)
         if text_context:
             contents.append(text_context)
         contents.append(prompt)
@@ -119,23 +119,6 @@ def _unresolved_fields(catalog: list[FieldSpec], emitted: dict[str, FieldValue])
     return [field for field in catalog if field.name not in emitted]
 
 
-def _text_context(page_text: str) -> str:
-    """Format the page's embedded text layer as a secondary, advisory input.
-
-    Scanned statement pages carry little or no text layer, so
-    the rendered image stays authoritative. When a text layer is present it helps
-    Gemini disambiguate values the rasterized image renders ambiguously.
-    """
-    text = page_text.strip()
-    if not text:
-        return ""
-    return (
-        "EMBEDDED TEXT LAYER for this page (advisory only — the image above is "
-        "authoritative; use this text just to disambiguate hard-to-read values):\n"
-        f"{text}"
-    )
-
-
 def _select_fallback_pages(document: ExtractedDocument) -> list[int]:
     page_texts = {page.page: page.text for page in document.pages}
     data_pages = set(select_data_pages(page_texts))
@@ -144,11 +127,3 @@ def _select_fallback_pages(document: ExtractedDocument) -> list[int]:
         for page in document.pages
         if page.page in data_pages and not page.form_fields
     ]
-
-
-def _merge_pages(per_page: list[tuple[int, dict[str, FieldValue]]]) -> dict[str, FieldValue]:
-    merged: dict[str, FieldValue] = {}
-    for _page_idx, fields in sorted(per_page):
-        for name, value in fields.items():
-            merged.setdefault(name, value)
-    return merged

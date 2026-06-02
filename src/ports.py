@@ -11,6 +11,7 @@ try:
 except ImportError:  # pydantic is a hard dependency; this only eases tooling before sync
     BaseModel = object  # type: ignore[assignment, misc]
 
+# NOTE: akin to interfaces
 
 @runtime_checkable
 class ExtractionStrategy(Protocol):

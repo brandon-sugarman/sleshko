@@ -60,12 +60,16 @@ def main(argv: list[str] | None = None) -> None:
 def _build_pipelines() -> list[Pipeline]:
     """Every Gemini config x active pairing, matching the eval runner."""
     pipelines: list[Pipeline] = []
-    for label, model, budget in GEMINI_CONFIGS:
-        cfg = load_settings(gemini_model=model, gemini_thinking_budget=budget)
+    for gc in GEMINI_CONFIGS:
+        cfg = load_settings(
+            gemini_model=gc.model,
+            gemini_thinking_budget=gc.thinking_budget,
+            gemini_thinking_level=gc.thinking_level,
+        )
         for ext, ana in ACTIVE_PAIRS:
             if ext in EXTRACTION_STRATEGIES and ana in ANALYSIS_STRATEGIES:
                 pipeline = build_matrix(cfg, [ext], [ana])[0]
-                pipelines.append(replace(pipeline, label=label))
+                pipelines.append(replace(pipeline, label=gc.label))
     return pipelines
 
 

@@ -122,3 +122,27 @@ FIELDS TO EXTRACT (JSON key: expected type):
 
 Return a JSON object containing only the fields printed on this page with
 non-zero / non-empty values, or {{}} if this page has none."""
+
+
+def build_page_text_context(page_text: str) -> str:
+    """Advisory embedded-text-layer block to accompany a rendered page image.
+
+    The rasterized image stays authoritative because scanned statement pages
+    carry little or no text layer. When a text layer is present it lets Gemini
+    read the exact digits, EINs, and codes that rasterization renders
+    ambiguously — but reading order in flattened K-1s is scrambled, so the text
+    is explicitly advisory and must not be used to pair labels with values.
+
+    Returns "" when there is no usable text, so callers can omit it entirely.
+    """
+    text = page_text.strip()
+    if not text:
+        return ""
+    return (
+        "EMBEDDED TEXT LAYER for this page (advisory only). The image above is "
+        "authoritative for which value belongs to which field. Use this text only "
+        "to read exact digits, EINs, and codes that are hard to make out in the "
+        "image. Its reading order may be scrambled, so never infer field/value "
+        "pairings from it:\n"
+        f"{text}"
+    )
