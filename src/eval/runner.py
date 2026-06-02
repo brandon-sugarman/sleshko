@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -16,7 +17,7 @@ from infra.gemini_client import (
     THINKING_LEVEL_LOW,
     THINKING_OFF,
 )
-from logger import dump_pipeline_snapshot, dump_report, make_logger
+from logger import dump_mismatches, dump_pipeline_snapshot, dump_report, make_logger
 from registry import ANALYSIS_STRATEGIES, EXTRACTION_STRATEGIES, Pipeline, build_matrix
 
 log = make_logger("eval.runner")
@@ -40,8 +41,11 @@ class GeminiConfig(NamedTuple):
 # Gemini configs benchmarked against every active strategy pairing.
 GEMINI_CONFIGS: list[GeminiConfig] = [
     GeminiConfig("flash/off", "gemini-2.5-flash", thinking_budget=THINKING_OFF),
+    GeminiConfig("flash/dyn", "gemini-2.5-flash", thinking_budget=THINKING_DYNAMIC),
     GeminiConfig("pro/dyn", "gemini-2.5-pro", thinking_budget=THINKING_DYNAMIC),
     GeminiConfig("3.1pro/high", "gemini-3.1-pro-preview", thinking_level=THINKING_LEVEL_HIGH),
+    GeminiConfig("3.1pro/low", "gemini-3.1-pro-preview", thinking_level=THINKING_LEVEL_HIGH),
+    GeminiConfig("3.5flash/high", "gemini-3.5-flash", thinking_level=THINKING_LEVEL_HIGH),
     GeminiConfig("3flash/low", "gemini-3-flash-preview", thinking_level=THINKING_LEVEL_LOW),
 ]
 
@@ -50,13 +54,13 @@ GEMINI_CONFIGS: list[GeminiConfig] = [
 # analysis), so the active set is curated here. Shared with sample_outputs_runner
 # so the manual-inspection dumps stay in sync with what the eval benchmarks.
 ACTIVE_PAIRS: list[tuple[str, str]] = [
-    ("pymupdf_full", "hybrid_max_fidelity"),       # 100% exact, but overfit to 3 docs
+    # ("pymupdf_full", "hybrid_max_fidelity"),       # 100% exact, but overfit to 3 docs
     ("pymupdf_full", "gemini_vision_acroform"),    # vision + acroform cover overrides — best generalizable
     ("pymupdf_full", "gemini_vision"),             # pure vision baseline for comparison
-    ("pymupdf_full", "acroform_gemini_selective"), # strong but more false+
-    ("pymupdf_full", "gemini_pdf"), #mid, lower recall
-    ("acroform", "acroform_cover"), #weak recall
-    ("pymupdf_text", "gemini_text"), #worst recall
+    # ("pymupdf_full", "acroform_gemini_selective"), # strong but more false+
+    # ("pymupdf_full", "gemini_pdf"), #mid, lower recall
+    # ("acroform", "acroform_cover"), #weak recall
+    # ("pymupdf_text", "gemini_text"), #worst recall
 ]
 
 
@@ -72,8 +76,15 @@ def _score_pipeline(
 ) -> PipelineScore:
     per_doc: list[DocumentScore] = []
     for doc_name, pdf_bytes in pdfs.items():
-        result = pipeline.run(doc_name, pdf_bytes)
-        per_doc.append(score_document(result, expected[doc_name], catalog))
+        try:
+            result = pipeline.run(doc_name, pdf_bytes)
+            per_doc.append(score_document(result, expected[doc_name], catalog))
+        except Exception as exc:
+            log.error(
+                "pipeline failed — scored as zero",
+                {"pipeline": pipeline.name, "doc": doc_name, "error": str(exc)},
+            )
+            per_doc.append(DocumentScore(doc_name=doc_name, pipeline=pipeline.name, comparisons=()))
     return PipelineScore(pipeline=pipeline.name, per_doc=tuple(per_doc))
 
 
@@ -95,6 +106,13 @@ def run_matrix(settings: Settings, pipelines: list[Pipeline]) -> MatrixReport:
 
 
 def main() -> None:
+    # Mismatch headers and extracted K-1 values contain non-ASCII (em-dashes,
+    # accented names). The default Windows console is cp1252/surrogateescape,
+    # which raises on those when stdout is redirected to a file; force UTF-8 so
+    # the report prints cleanly. The dumped .txt files are already UTF-8.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     settings = load_settings()
     import strategies  # noqa: F401 - populates EXTRACTION_STRATEGIES / ANALYSIS_STRATEGIES
 
@@ -136,7 +154,7 @@ def main() -> None:
     log.info("pipeline snapshot written", {"path": str(snapshot_path)})
 
     report = run_matrix(settings, pipelines)
-    from eval.report import render_console, render_doc_scores
+    from eval.report import render_console, render_doc_scores, render_mismatches
 
     leaderboard = render_console(report)
     per_doc = render_doc_scores(report)
@@ -145,9 +163,17 @@ def main() -> None:
     report_path = dump_report(full_report)
     log.info("report written", {"path": str(report_path)})
 
+    # Per-field expected/predicted for every miss — the "what did it actually get
+    # wrong" view, ranked best-pipeline-first to match the leaderboard ordering.
+    mismatches = "\n\n".join(render_mismatches(s) for s in report.ranked)
+    mismatches_path = dump_mismatches(mismatches)
+    log.info("mismatches written", {"path": str(mismatches_path)})
+
     print(leaderboard)
     print()
     print(per_doc)
+    print()
+    print(mismatches)
 
 
 if __name__ == "__main__":

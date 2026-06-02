@@ -26,6 +26,25 @@ from eval.normalize import normalize_int
 from logger import make_logger
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+_RETRY_DELAY_RE = re.compile(r"retryDelay['\"]?\s*[:\s]+['\"]?(\d+)s", re.IGNORECASE)
+_MIN_BACKOFF = 2.0   # seconds between non-429 retries
+_MAX_BACKOFF = 60.0  # cap so we never wait longer than a minute
+
+
+def _retry_delay_seconds(exc: Exception) -> float:
+    """Return how long to wait before the next attempt.
+
+    Parses the retryDelay hint from 429 responses; falls back to exponential
+    backoff for other transient errors.
+    """
+    msg = str(exc)
+    if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+        m = _RETRY_DELAY_RE.search(msg)
+        if m:
+            # Add a small buffer on top of the server hint.
+            return float(m.group(1)) + 2.0
+        return 20.0  # safe default when hint is absent
+    return min(_MIN_BACKOFF * (2 ** 1), _MAX_BACKOFF)
 
 log = make_logger("infra.gemini_client")
 
@@ -102,7 +121,11 @@ class GeminiClient:
         )
 
     def generate(self, contents: list[Any]) -> str:
-        """Call Gemini and return the response text. Retries up to max_attempts."""
+        """Call Gemini and return the response text. Retries up to max_attempts.
+
+        On 429 RESOURCE_EXHAUSTED the API embeds a retryDelay; we parse it and
+        wait at least that long so the next attempt actually succeeds.
+        """
         last_err: Exception | None = None
         for attempt in range(self.max_attempts):
             try:
@@ -122,7 +145,8 @@ class GeminiClient:
                     {"attempt": attempt + 1, "max": self.max_attempts, "error": str(exc)},
                 )
                 if attempt < self.max_attempts - 1:
-                    time.sleep(1.5 * (2**attempt))
+                    delay = _retry_delay_seconds(exc)
+                    time.sleep(delay)
         raise RuntimeError(f"Gemini gave up after {self.max_attempts} attempts: {last_err}")
 
     def pdf_part(self, pdf_bytes: bytes) -> types.Part:

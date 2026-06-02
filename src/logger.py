@@ -53,6 +53,14 @@ def dump_report(text: str) -> Path:
     return report_path
 
 
+def dump_mismatches(text: str) -> Path:
+    """Write the per-field mismatch breakdown as mismatches.txt in the run folder."""
+    _configure()
+    mismatches_path = _RUN_DIR / "mismatches.txt"
+    mismatches_path.write_text(text, encoding="utf-8")
+    return mismatches_path
+
+
 class _StructuredLogger:
     """Thin wrapper so application code logs structured data, not interpolated
     strings. One `log = make_logger("tag")` per module.
